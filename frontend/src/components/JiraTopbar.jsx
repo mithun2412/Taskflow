@@ -10,20 +10,17 @@ export default function JiraTopBar({ onCreateClick }) {
           background: white;
           border-bottom: 1px solid #e5e7eb;
         }
-
         .jira-logo {
           font-weight: 600;
           color: #0052cc;
           font-size: 18px;
         }
-
         .jira-search {
           flex: 1;
           padding: 6px 10px;
           border-radius: 4px;
           border: 1px solid #dfe1e6;
         }
-
         .jira-create {
           background: #0052cc;
           color: white;

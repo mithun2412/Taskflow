@@ -1,8 +1,9 @@
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .models import (
+    Sprint,
     Task,
     TaskList,
     TaskAssignee,
@@ -10,7 +11,9 @@ from .models import (
     ActivityLog,
 )
 from .serializers import (
+    SprintSerializer,
     TaskSerializer,
+    TaskCreateSerializer,
     TaskListSerializer,
     TaskAssigneeSerializer,
     CommentSerializer,
@@ -22,55 +25,116 @@ from .utils import log_activity
 
 
 # -------------------------
-# TASK LIST (COLUMNS)
+# STATUS → COLUMN MAP
 # -------------------------
-class TaskListViewSet(ModelViewSet):
+STATUS_TO_COLUMN = {
+    "TODO": "To Do",
+    "IN_PROGRESS": "In Progress",
+    "DONE": "Done",
+}
+
+
+# -------------------------
+# SPRINT (READ ONLY)
+# -------------------------
+class SprintViewSet(ReadOnlyModelViewSet):
+    serializer_class = SprintSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Sprint.objects.filter(
+            board__project__workspace__workspacemember__user=self.request.user
+        ).distinct()
+
+
+# -------------------------
+# TASK LIST (KANBAN COLUMNS)
+# -------------------------
+class TaskListViewSet(ReadOnlyModelViewSet):
     serializer_class = TaskListSerializer
     permission_classes = [IsAuthenticated]
 
-    # ✅ Users + Admins can VIEW task lists
     def get_queryset(self):
         return TaskList.objects.filter(
             board__project__workspace__workspacemember__user=self.request.user
-        )
+        ).distinct()
 
 
 # -------------------------
-# TASK (CARD)
+# TASK (KANBAN CARD)
 # -------------------------
 class TaskViewSet(ModelViewSet):
-    serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
 
-    # ✅ Users + Admins can VIEW tasks
+    def get_serializer_class(self):
+        if self.action == "create":
+            return TaskCreateSerializer
+        return TaskSerializer
+
     def get_queryset(self):
         return Task.objects.filter(
             task_list__board__project__workspace__workspacemember__user=self.request.user
         ).distinct()
 
-    # ✅ USERS + ADMINS CAN CREATE TASKS
+    # -------------------------
+    # CREATE TASK → PLACE IN COLUMN BASED ON STATUS
+    # -------------------------
     def perform_create(self, serializer):
-        task_list = serializer.validated_data["task_list"]
-        workspace = task_list.board.project.workspace
+        user = self.request.user
+        status_value = serializer.validated_data.get("status", "TODO")
 
-        if not WorkspaceMember.objects.filter(
-            user=self.request.user,
-            workspace=workspace
-        ).exists():
-            raise PermissionDenied("Not a workspace member")
+        column_title = STATUS_TO_COLUMN.get(status_value)
+        if not column_title:
+            raise ValidationError("Invalid task status")
 
-        task = serializer.save(created_by=self.request.user)
+        task_list = TaskList.objects.filter(
+            title__iexact=column_title,
+            board__project__workspace__workspacemember__user=user
+        ).first()
+
+        if not task_list:
+            raise ValidationError(
+                f"Task list '{column_title}' not found. Ensure default columns exist."
+            )
+
+        task = serializer.save(
+            created_by=user,
+            task_list=task_list
+        )
 
         log_activity(
-            user=self.request.user,
+            user=user,
             action="created task",
             entity_type="Task",
             entity_id=task.id
         )
 
-    # ✅ USERS + ADMINS CAN UPDATE TASKS
+    # -------------------------
+    # UPDATE TASK → MOVE BETWEEN COLUMNS IF STATUS CHANGES
+    # -------------------------
     def perform_update(self, serializer):
         task = serializer.save()
+
+        if "status" in serializer.validated_data:
+            status_value = serializer.validated_data["status"]
+            column_title = STATUS_TO_COLUMN.get(status_value)
+
+            if not column_title:
+                raise ValidationError("Invalid task status")
+
+            new_task_list = TaskList.objects.filter(
+                title__iexact=column_title,
+                board=task.task_list.board
+            ).first()
+
+            if not new_task_list:
+                raise ValidationError(
+                    f"Task list '{column_title}' not found for this board"
+                )
+
+            if task.task_list_id != new_task_list.id:
+                task.task_list = new_task_list
+                task.save(update_fields=["task_list"])
 
         log_activity(
             user=self.request.user,
@@ -90,16 +154,15 @@ class TaskAssigneeViewSet(ModelViewSet):
     def get_queryset(self):
         return TaskAssignee.objects.filter(
             task__task_list__board__project__workspace__workspacemember__user=self.request.user
-        )
+        ).distinct()
 
-    # ✅ USERS + ADMINS CAN ASSIGN TASKS
     def perform_create(self, serializer):
         task = serializer.validated_data["task"]
-        user = serializer.validated_data["user"]
+        user_to_assign = serializer.validated_data["user"]
         workspace = task.task_list.board.project.workspace
 
         if not WorkspaceMember.objects.filter(
-            user=user,
+            user=user_to_assign,
             workspace=workspace
         ).exists():
             raise PermissionDenied("User is not a workspace member")
@@ -124,9 +187,8 @@ class CommentViewSet(ModelViewSet):
     def get_queryset(self):
         return Comment.objects.filter(
             task__task_list__board__project__workspace__workspacemember__user=self.request.user
-        )
+        ).distinct()
 
-    # ✅ USERS + ADMINS CAN COMMENT
     def perform_create(self, serializer):
         task = serializer.validated_data["task"]
         workspace = task.task_list.board.project.workspace
@@ -135,7 +197,7 @@ class CommentViewSet(ModelViewSet):
             user=self.request.user,
             workspace=workspace
         ).exists():
-            raise PermissionDenied("You are not a workspace member")
+            raise PermissionDenied("Not a workspace member")
 
         comment = serializer.save(user=self.request.user)
 

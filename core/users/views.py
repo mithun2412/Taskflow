@@ -1,13 +1,20 @@
+from django.contrib.auth.models import User
+
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer
+from rest_framework.viewsets import ReadOnlyModelViewSet
 
-from rest_framework.permissions import IsAuthenticated
+from .serializers import RegisterSerializer, UserSerializer
+from projects.models import WorkspaceMember
 
+
+# -------------------------
+# REGISTER
+# -------------------------
 @api_view(["POST"])
-@permission_classes([AllowAny])   # ✅ THIS IS THE FIX
+@permission_classes([AllowAny])
 def register(request):
     serializer = RegisterSerializer(data=request.data)
 
@@ -21,10 +28,32 @@ def register(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
+# -------------------------
+# CURRENT USER
+# -------------------------
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
     return Response({
-        "username": request.user.username
+        "id": request.user.id,
+        "username": request.user.username,
+        "email": request.user.email,
     })
+
+
+# -------------------------
+# WORKSPACE USERS (ASSIGNEES)
+# -------------------------
+class WorkspaceUserViewSet(ReadOnlyModelViewSet):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        workspace_id = self.request.query_params.get("workspace")
+
+        if not workspace_id:
+            return User.objects.none()
+
+        return User.objects.filter(
+            workspacemember__workspace_id=workspace_id
+        ).distinct()

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Workspace, Project, Board
+from .models import Workspace, Project, Board, WorkspaceMember
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
@@ -12,11 +12,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def get_is_admin(self, obj):
         request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
-            return False
-
-        # 🔥 SINGLE SOURCE OF TRUTH
-        return request.user.is_superuser
+        return request.user.is_superuser if request else False
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -30,3 +26,12 @@ class BoardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Board
         fields = ["id", "name", "project"]
+
+
+class WorkspaceMemberSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = WorkspaceMember
+        fields = ["id", "email", "username"]
