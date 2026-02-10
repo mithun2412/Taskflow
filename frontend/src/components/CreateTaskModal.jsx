@@ -1,226 +1,212 @@
 import { useEffect, useState } from "react";
 import api from "../api/axios";
 
-export default function CreateTaskModal({ onClose, onCreated }) {
+const STATUS_COLORS = {
+  TODO: "#DFE1E6",
+  IN_PROGRESS: "#DEEBFF",
+  IN_REVIEW: "#EAE6FF",
+  DONE: "#E3FCEF",
+};
+
+export default function CreateTaskModal({ task, onClose, onCreated }) {
+  const isEdit = Boolean(task);
+
   const [error, setError] = useState("");
-
-  const [workspaces, setWorkspaces] = useState([]);
-  const [teams, setTeams] = useState([]);   // Projects shown as Teams
+  const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
-
-  const currentUserEmail = localStorage.getItem("email");
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   const [form, setForm] = useState({
     workspace: "",
     team: "",
     title: "",
     description: "",
-    status: "TODO",
     priority: "MEDIUM",
     assignees: [],
+    status: "TODO",
+    is_published: false,
   });
 
-  /* -----------------------------
-     LOAD WORKSPACES
-  ----------------------------- */
+  /* ---------------- PREFILL EDIT ---------------- */
   useEffect(() => {
-    api.get("/workspaces/")
-      .then(res => setWorkspaces(res.data))
-      .catch(() => setWorkspaces([]));
-  }, []);
+    if (!task) return;
 
-  /* -----------------------------
-     LOAD TEAMS + USERS
-  ----------------------------- */
+    setForm({
+      workspace: task.workspace,
+      team: task.team,
+      title: task.title,
+      description: task.description || "",
+      priority: task.priority,
+      assignees: task.assignees?.map(a => a.id) || [],
+      status: task.status,
+      is_published: task.is_published || false,
+    });
+  }, [task]);
+
+  /* ---------------- LOAD TEAM + USERS ---------------- */
   useEffect(() => {
-    if (!form.workspace) {
-      setTeams([]);
-      setUsers([]);
-      return;
-    }
+    if (!form.workspace) return;
 
-    const workspaceId = Number(form.workspace);
+    api.get(`/projects/?workspace=${form.workspace}`)
+      .then(res => setTeams(res.data));
 
-    // 🔹 Load Teams (Projects)
-    api.get(`/projects/?workspace=${workspaceId}`)
-      .then(res => setTeams(res.data))
-      .catch(() => setTeams([]));
+    api.get(`/users/?workspace=${form.workspace}`)
+      .then(res => setUsers(res.data));
+  }, [form.workspace]);
 
-    // 🔹 Load Users (Assignees)
-    api.get(`/users/?workspace=${workspaceId}`)
-      .then(res => {
-        setUsers(res.data);
-
-        const me = res.data.find(u => u.email === currentUserEmail);
-        if (me) {
-          setForm(prev => ({
-            ...prev,
-            assignees: [me.id],
-          }));
-        }
-      })
-      .catch(() => setUsers([]));
-
-  }, [form.workspace, currentUserEmail]);
-
-  /* -----------------------------
-     HANDLERS
-  ----------------------------- */
-  const handleChange = (e) => {
+  /* ---------------- HANDLERS ---------------- */
+  const handleChange = e => {
     const { name, value } = e.target;
-
-    setForm(prev => ({
-      ...prev,
-      [name]: value,
-      ...(name === "workspace" ? { team: "" } : {})
-    }));
+    setForm(p => ({ ...p, [name]: value }));
   };
 
-  const handleAssigneeChange = (e) => {
-    const value = Number(e.target.value);
-    setForm(prev => ({
-      ...prev,
-      assignees: value ? [value] : [],
-    }));
+  const handleAssigneeChange = e => {
+    const v = Number(e.target.value);
+    setForm(p => ({ ...p, assignees: v ? [v] : [] }));
   };
 
-  /* -----------------------------
-     SUBMIT
-  ----------------------------- */
-  const submit = async () => {
+  const updateStatus = status => {
+    setForm(p => ({ ...p, status }));
+    setShowStatusMenu(false);
+  };
+
+  /* ---------------- SUBMIT ---------------- */
+  const submit = async (publish = false) => {
     setError("");
 
-    if (!form.workspace || !form.title.trim()) {
-      setError("Workspace and Summary are required");
+    if (!form.title.trim()) {
+      setError("Summary is required");
       return;
     }
 
     const payload = {
       title: form.title,
       description: form.description,
-      status: form.status,
       priority: form.priority,
-      team: form.team ? Number(form.team) : null,
       assignees: form.assignees,
+      status: form.status,
+      team: form.team,
+      is_published: publish ? true : form.is_published,
     };
 
     try {
-      await api.post("/tasks/", payload);
+      if (isEdit) {
+        await api.patch(`/tasks/${task.id}/`, payload);
+      } else {
+        await api.post("/tasks/", payload);
+      }
+
       onCreated();
       onClose();
-    } catch (err) {
-      setError(
-        err.response?.data
-          ? JSON.stringify(err.response.data, null, 2)
-          : "Something went wrong"
-      );
+    } catch {
+      setError("Something went wrong");
     }
   };
 
-  /* -----------------------------
-     UI
-  ----------------------------- */
+  /* ---------------- UI ---------------- */
   return (
     <div style={overlay}>
       <div style={modal}>
-        <h3>Create Task</h3>
+        {/* HEADER */}
+        <div style={header}>
+          <h3>{isEdit ? "Edit Task" : "Create Task"}</h3>
 
-        {error && <pre style={{ color: "red" }}>{error}</pre>}
+          {/* TOP RIGHT CONTROLS */}
+          {isEdit && (
+            <div style={topRight}>
+              {/* STATUS */}
+              <div style={{ position: "relative" }}>
+                <div
+                  onClick={() => setShowStatusMenu(v => !v)}
+                  style={{
+                    background: STATUS_COLORS[form.status],
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {form.status.replace("_", " ")}
+                </div>
 
-        {/* Workspace */}
-        <label>Workspace *</label>
-        <select
-          name="workspace"
-          value={form.workspace}
-          onChange={handleChange}
-        >
-          <option value="">Select workspace</option>
-          {workspaces.map(w => (
-            <option key={w.id} value={w.id}>{w.name}</option>
+                {showStatusMenu && (
+                  <div style={statusMenu}>
+                    {Object.keys(STATUS_COLORS).map(s => (
+                      <div
+                        key={s}
+                        onClick={() => updateStatus(s)}
+                        style={statusItem}
+                      >
+                        {s.replace("_", " ")}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 🔥 PUBLISH (TOP RIGHT) */}
+              {!form.is_published && (
+                <button
+                  onClick={() => submit(true)}
+                  style={publishBtn}
+                >
+                  Publish
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {error && <p style={{ color: "red" }}>{error}</p>}
+
+        {/* TEAM */}
+        <label>Team</label>
+        <select name="team" value={form.team || ""} onChange={handleChange}>
+          <option value="">Select team</option>
+          {teams.map(t => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
 
-        {/* Status */}
-        <label>Status</label>
-        <select
-          name="status"
-          value={form.status}
-          onChange={handleChange}
-        >
-          <option value="TODO">To Do</option>
-          <option value="IN_PROGRESS">In Progress</option>
-          <option value="IN_REVIEW">In Review</option>
-          <option value="DONE">Done</option>
-        </select>
+        {/* SUMMARY */}
+        <label>Summary</label>
+        <input name="title" value={form.title} onChange={handleChange} />
 
-        {/* Summary */}
-        <label>Summary *</label>
-        <input
-          name="title"
-          value={form.title}
-          onChange={handleChange}
-        />
-
-        {/* Description */}
+        {/* DESCRIPTION */}
         <label>Description</label>
         <textarea
-          name="description"
           rows={4}
+          name="description"
           value={form.description}
           onChange={handleChange}
         />
 
-        {/* Assignee */}
-        <label>Assignee (email)</label>
-        <select
-          value={form.assignees[0] || ""}
-          onChange={handleAssigneeChange}
-        >
+        {/* ASSIGNEE */}
+        <label>Assignee</label>
+        <select value={form.assignees[0] || ""} onChange={handleAssigneeChange}>
           <option value="">Select assignee</option>
           {users.map(u => (
-            <option key={u.id} value={u.id}>
-              {u.email}
-            </option>
+            <option key={u.id} value={u.id}>{u.email}</option>
           ))}
         </select>
 
-        {/* Priority */}
+        {/* PRIORITY */}
         <label>Priority</label>
-        <select
-          name="priority"
-          value={form.priority}
-          onChange={handleChange}
-        >
+        <select name="priority" value={form.priority} onChange={handleChange}>
           <option value="LOW">Low</option>
           <option value="MEDIUM">Medium</option>
           <option value="HIGH">High</option>
         </select>
 
-        {/* Team */}
-        <label>Team</label>
-        <select
-          name="team"
-          value={form.team}
-          onChange={handleChange}
-          disabled={!teams.length}
-        >
-          <option value="">
-            {teams.length ? "Select team" : "No teams available"}
-          </option>
-          {teams.map(t => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-
+        {/* ACTIONS */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button onClick={onClose}>Cancel</button>
           <button
-            onClick={submit}
+            onClick={() => submit(false)}
             style={{ background: "#0052cc", color: "white" }}
           >
-            Create
+            {isEdit ? "Update" : "Create"}
           </button>
         </div>
       </div>
@@ -228,9 +214,7 @@ export default function CreateTaskModal({ onClose, onCreated }) {
   );
 }
 
-/* -----------------------------
-   STYLES
------------------------------ */
+/* ---------------- STYLES ---------------- */
 const overlay = {
   position: "fixed",
   inset: 0,
@@ -238,15 +222,53 @@ const overlay = {
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
-  zIndex: 1000,
 };
 
 const modal = {
   width: 560,
   background: "white",
   padding: 20,
-  borderRadius: 6,
+  borderRadius: 8,
   display: "flex",
   flexDirection: "column",
   gap: 10,
+};
+
+const header = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const topRight = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const publishBtn = {
+  background: "#36B37E",
+  color: "white",
+  border: "none",
+  padding: "6px 12px",
+  borderRadius: 6,
+  fontSize: 12,
+  cursor: "pointer",
+};
+
+const statusMenu = {
+  position: "absolute",
+  right: 0,
+  top: 32,
+  background: "white",
+  border: "1px solid #dfe1e6",
+  borderRadius: 6,
+  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+  zIndex: 20,
+};
+
+const statusItem = {
+  padding: "8px 12px",
+  cursor: "pointer",
+  fontSize: 12,
 };

@@ -5,6 +5,9 @@ from django.utils import timezone
 User = settings.AUTH_USER_MODEL
 
 
+# =========================
+# WORKSPACE
+# =========================
 class Workspace(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
@@ -25,6 +28,9 @@ class Workspace(models.Model):
         return self.name
 
 
+# =========================
+# WORKSPACE MEMBER
+# =========================
 class WorkspaceMember(models.Model):
     ROLE_CHOICES = [
         ("ADMIN", "Admin"),
@@ -45,7 +51,13 @@ class WorkspaceMember(models.Model):
         db_column="workspace_id"
     )
 
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    # 🔥 FIX: DEFAULT ROLE (CRITICAL)
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="MEMBER"
+    )
+
     joined_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -57,6 +69,9 @@ class WorkspaceMember(models.Model):
         return f"{self.user} → {self.workspace} ({self.role})"
 
 
+# =========================
+# PROJECT (TEAM)
+# =========================
 class Project(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
@@ -84,6 +99,9 @@ class Project(models.Model):
         return self.name
 
 
+# =========================
+# BOARD
+# =========================
 class Board(models.Model):
     id = models.AutoField(primary_key=True)
 

@@ -1,9 +1,11 @@
 from django.contrib.auth.models import User
-from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet, ViewSet
+
+from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
 
 from .models import Workspace, WorkspaceMember, Project, Board
 from .serializers import (
@@ -13,12 +15,12 @@ from .serializers import (
     WorkspaceMemberSerializer,
 )
 
-from tasks.models import TaskList   # 🔥 REQUIRED FOR TASK CREATION
+from tasks.models import TaskList
 
 
-# -------------------------
+# =========================
 # WORKSPACE
-# -------------------------
+# =========================
 class WorkspaceViewSet(ModelViewSet):
     serializer_class = WorkspaceSerializer
     permission_classes = [IsAuthenticated]
@@ -34,15 +36,17 @@ class WorkspaceViewSet(ModelViewSet):
 
         workspace = serializer.save(owner=self.request.user)
 
-        WorkspaceMember.objects.create(
+        # 🔥 creator becomes ADMIN
+        WorkspaceMember.objects.get_or_create(
             workspace=workspace,
             user=self.request.user,
+            defaults={"role": "ADMIN"},
         )
 
 
-# -------------------------
-# PROJECT (USED AS TEAM)
-# -------------------------
+# =========================
+# PROJECT (TEAM)
+# =========================
 class ProjectViewSet(ModelViewSet):
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated]
@@ -50,14 +54,14 @@ class ProjectViewSet(ModelViewSet):
     def get_queryset(self):
         workspace_id = self.request.query_params.get("workspace")
 
-        queryset = Project.objects.filter(
+        qs = Project.objects.filter(
             workspace__workspacemember__user=self.request.user
         )
 
         if workspace_id:
-            queryset = queryset.filter(workspace_id=workspace_id)
+            qs = qs.filter(workspace_id=workspace_id)
 
-        return queryset.distinct()
+        return qs.distinct()
 
     def perform_create(self, serializer):
         if not self.request.user.is_superuser:
@@ -66,9 +70,9 @@ class ProjectViewSet(ModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
-# -------------------------
+# =========================
 # BOARD
-# -------------------------
+# =========================
 class BoardViewSet(ModelViewSet):
     serializer_class = BoardSerializer
     permission_classes = [IsAuthenticated]
@@ -84,18 +88,21 @@ class BoardViewSet(ModelViewSet):
 
         board = serializer.save()
 
-        # 🔥 AUTO-CREATE ALL REQUIRED TASK LISTS
-        TaskList.objects.bulk_create([
-            TaskList(board=board, title="To Do", position=1),
-            TaskList(board=board, title="In Progress", position=2),
-            TaskList(board=board, title="In Review", position=3),
-            TaskList(board=board, title="Done", position=4),
-        ])
+        # 🔥 default Kanban columns
+        TaskList.objects.bulk_create(
+            [
+                TaskList(board=board, title="To Do", position=1),
+                TaskList(board=board, title="In Progress", position=2),
+                TaskList(board=board, title="In Review", position=3),
+                TaskList(board=board, title="Done", position=4),
+            ],
+            ignore_conflicts=True,
+        )
 
 
-# -------------------------
+# =========================
 # WORKSPACE MEMBERS (LIST)
-# -------------------------
+# =========================
 class WorkspaceMemberViewSet(ReadOnlyModelViewSet):
     serializer_class = WorkspaceMemberSerializer
     permission_classes = [IsAuthenticated]
@@ -109,68 +116,70 @@ class WorkspaceMemberViewSet(ReadOnlyModelViewSet):
         return WorkspaceMember.objects.filter(
             workspace_id=workspace_id,
             workspace__workspacemember__user=self.request.user
-        )
+        ).select_related("user").distinct()
 
 
-# -------------------------
-# ADD MEMBER (ADMIN ONLY)
-# -------------------------
-class AddWorkspaceMemberViewSet(ViewSet):
-    permission_classes = [IsAuthenticated]
+# =========================
+# ADD WORKSPACE MEMBER
+# =========================
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_workspace_member(request):
+    workspace_id = request.data.get("workspace")
+    email = request.data.get("email")
 
-    def create(self, request):
-        workspace_id = request.data.get("workspace")
-        email = request.data.get("email")
-
-        if not workspace_id or not email:
-            return Response(
-                {"error": "workspace and email are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        email = email.strip().lower()
-
-        try:
-            workspace = Workspace.objects.get(id=workspace_id)
-        except Workspace.DoesNotExist:
-            return Response(
-                {"error": "Workspace not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        if not request.user.is_superuser:
-            raise PermissionDenied("Only admins can add members")
-
-        users = User.objects.filter(email__iexact=email)
-
-        if not users.exists():
-            return Response(
-                {"error": "User with this email does not exist"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        if users.count() > 1:
-            return Response(
-                {"error": "Multiple users found with this email"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = users.first()
-
-        if WorkspaceMember.objects.filter(
-            workspace=workspace, user=user
-        ).exists():
-            return Response(
-                {"error": "User already added to this workspace"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        WorkspaceMember.objects.create(
-            workspace=workspace,
-            user=user,
-        )
-
+    if not workspace_id or not email:
         return Response(
-            {"message": "User added successfully"},
-            status=status.HTTP_201_CREATED
+            {"error": "workspace and email are required"},
+            status=status.HTTP_400_BAD_REQUEST
         )
+
+    email = email.strip().lower()
+
+    try:
+        workspace = Workspace.objects.get(id=workspace_id)
+    except Workspace.DoesNotExist:
+        return Response(
+            {"error": "Workspace not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # ✅ only owner or superuser
+    if workspace.owner != request.user and not request.user.is_superuser:
+        return Response(
+            {"error": "Only workspace owner can add members"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User with this email does not exist"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if WorkspaceMember.objects.filter(workspace=workspace, user=user).exists():
+        return Response(
+            {"error": "User already added to this workspace"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 🔥 CRITICAL FIX: role MUST be set
+    WorkspaceMember.objects.create(
+        workspace=workspace,
+        user=user,
+        role="MEMBER"
+    )
+
+    return Response(
+        {
+            "message": "User added successfully",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+            }
+        },
+        status=status.HTTP_201_CREATED
+    )

@@ -50,6 +50,10 @@ class TaskSerializer(serializers.ModelSerializer):
     assignees = serializers.SerializerMethodField()
     sprint_name = serializers.CharField(source="sprint.name", read_only=True)
 
+    # ✅ DERIVED FIELDS
+    workspace = serializers.SerializerMethodField()
+    team = serializers.SerializerMethodField()
+
     class Meta:
         model = Task
         fields = [
@@ -60,6 +64,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "priority",
             "status",
             "task_list",
+            "workspace",   # ✅ NOW VALID
+            "team",        # ✅ NOW VALID
             "position",
             "parent",
             "sprint",
@@ -73,6 +79,7 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["created_by", "created_at"]
 
+    # 🔹 USERS
     def get_assignees(self, obj):
         return [
             {
@@ -83,9 +90,17 @@ class TaskSerializer(serializers.ModelSerializer):
             for ta in obj.task_assignees.select_related("user")
         ]
 
+    # 🔹 WORKSPACE (DERIVED)
+    def get_workspace(self, obj):
+        return obj.task_list.board.project.workspace.id
+
+    # 🔹 TEAM (PROJECT)
+    def get_team(self, obj):
+        return obj.task_list.board.project.id
+
 
 # ---------------------------
-# Task (CREATE)
+# Task (CREATE / UPDATE)
 # ---------------------------
 class TaskCreateSerializer(serializers.ModelSerializer):
     assignees = serializers.ListField(
@@ -97,7 +112,7 @@ class TaskCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            "title",          # ✅ REQUIRED
+            "title",
             "description",
             "work_type",
             "priority",
@@ -122,6 +137,23 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             )
 
         return task
+
+    def update(self, instance, validated_data):
+        assignees = validated_data.pop("assignees", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if assignees is not None:
+            instance.task_assignees.all().delete()
+            for user_id in assignees:
+                TaskAssignee.objects.create(
+                    task=instance,
+                    user_id=user_id
+                )
+
+        return instance
 
 
 # ---------------------------

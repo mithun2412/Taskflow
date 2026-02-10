@@ -10,9 +10,9 @@ from .serializers import RegisterSerializer, UserSerializer
 from projects.models import WorkspaceMember
 
 
-# -------------------------
+# =========================
 # REGISTER
-# -------------------------
+# =========================
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
@@ -28,9 +28,9 @@ def register(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# -------------------------
+# =========================
 # CURRENT USER
-# -------------------------
+# =========================
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
@@ -41,9 +41,10 @@ def current_user(request):
     })
 
 
-# -------------------------
+# =========================
 # WORKSPACE USERS (ASSIGNEES)
-# -------------------------
+# GET /users/?workspace=<id>
+# =========================
 class WorkspaceUserViewSet(ReadOnlyModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
@@ -56,4 +57,39 @@ class WorkspaceUserViewSet(ReadOnlyModelViewSet):
 
         return User.objects.filter(
             workspacemember__workspace_id=workspace_id
-        ).distinct()
+        ).distinct().order_by("email")
+
+
+# =========================
+# SEARCH USERS (INVITE PEOPLE)
+# GET /users/search/?q=email&workspace=<id>
+# =========================
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def search_users(request):
+    query = request.query_params.get("q", "").strip()
+    workspace_id = request.query_params.get("workspace")
+
+    if not query:
+        return Response([])
+
+    users = User.objects.filter(
+        email__icontains=query
+    ).order_by("email")
+
+    # 🔒 OPTIONAL: exclude users already in workspace
+    if workspace_id:
+        users = users.exclude(
+            workspacemember__workspace_id=workspace_id
+        )
+
+    users = users[:5]
+
+    return Response([
+        {
+            "id": u.id,
+            "email": u.email,
+            "username": u.username,
+        }
+        for u in users
+    ])
