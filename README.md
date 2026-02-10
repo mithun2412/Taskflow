@@ -1,4 +1,4 @@
-# 🚀 TaskFlow – Jira-Like Project Management System
+# 🚀 TaskFlow – Enterprise Task & Collaboration Platform
 
 TaskFlow is a Jira-inspired project management system built using **Django REST Framework** and **React**.  
 It enables teams to manage work using **Workspaces, Projects, Boards, and Kanban Tasks**, following real-world Jira design principles.
