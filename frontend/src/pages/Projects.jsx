@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import JiraTopBar from "../components/Temp";
+import JiraTopBar from "../components/JiraTopBar";
 import WorkspaceSidebar from "../components/WorkspaceSidebar";
 import ProjectHeader from "../components/ProjectHeader";
 import BoardTabs from "../components/BoardTabs";
