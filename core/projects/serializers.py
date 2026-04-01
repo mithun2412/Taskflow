@@ -12,7 +12,13 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def get_is_admin(self, obj):
         request = self.context.get("request")
-        return request.user.is_superuser if request else False
+        if not request:
+            return False
+        return WorkspaceMember.objects.filter(
+            user=request.user,
+            workspace=obj,
+            role="ADMIN",
+        ).exists() or request.user.is_superuser
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -29,9 +35,11 @@ class BoardSerializer(serializers.ModelSerializer):
 
 
 class WorkspaceMemberSerializer(serializers.ModelSerializer):
-    email = serializers.EmailField(source="user.email", read_only=True)
-    username = serializers.CharField(source="user.username", read_only=True)
+    email    = serializers.EmailField(source="user.email",    read_only=True)
+    username = serializers.CharField(source="user.username",  read_only=True)
+    user_id  = serializers.IntegerField(source="user.id",     read_only=True)
 
     class Meta:
-        model = WorkspaceMember
-        fields = ["id", "email", "username"]
+        model  = WorkspaceMember
+        fields = ["id", "user_id", "email", "username", "role", "joined_at"]
+        read_only_fields = ["id", "user_id", "email", "username", "joined_at"]
