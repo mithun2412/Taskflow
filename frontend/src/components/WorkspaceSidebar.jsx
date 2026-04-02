@@ -1,55 +1,107 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
 
 export default function WorkspaceSidebar({
   selectedWorkspace, setSelectedWorkspace,
   selectedProject,   setSelectedProject,
+  reloadMembers,   // ✅ NEW: bumped by Projects.jsx after a successful invite
 }) {
   const [workspaces,          setWorkspaces]          = useState([]);
   const [projects,            setProjects]            = useState([]);
+  const [members,             setMembers]             = useState([]);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [newWorkspaceName,    setNewWorkspaceName]    = useState("");
   const [showCreateProject,   setShowCreateProject]   = useState(false);
   const [newProjectName,      setNewProjectName]      = useState("");
   const [collapsed,           setCollapsed]           = useState(false);
+  const [membersExpanded,     setMembersExpanded]     = useState(true);
+  const [activeMember,        setActiveMember]        = useState(null); // member whose popover is open
 
-  const loadWorkspaces = async () => {
+  const loadWorkspaces = useCallback(async () => {
     const res = await api.get("/workspaces/");
     setWorkspaces(res.data);
     if (res.data.length && !selectedWorkspace) setSelectedWorkspace(res.data[0]);
-  };
+  }, [selectedWorkspace, setSelectedWorkspace]);
 
-  const loadProjects = async (workspaceId) => {
+  const loadProjects = useCallback(async (workspaceId) => {
     const res = await api.get(`/projects/?workspace=${workspaceId}`);
     setProjects(res.data);
-    // auto-select first project so a board loads immediately
     if (res.data.length) setSelectedProject(res.data[0]);
-  };
+    else setSelectedProject(null);
+  }, [setSelectedProject]);
 
-  useEffect(() => { loadWorkspaces(); }, []);
+  const loadMembers = useCallback(async (workspaceId) => {
+    try {
+      const res = await api.get(`/workspace-members/?workspace=${workspaceId}`);
+      setMembers(res.data);
+    } catch {
+      setMembers([]);
+    }
+  }, []);
+
+  useEffect(() => { loadWorkspaces(); }, [loadWorkspaces]);
+
+  // ✅ Re-fetch members whenever parent signals a new invite was completed
+  useEffect(() => {
+    if (selectedWorkspace && reloadMembers > 0) {
+      loadMembers(selectedWorkspace.id);
+    }
+  }, [reloadMembers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (selectedWorkspace) {
       setProjects([]);
       setSelectedProject(null);
+      setMembers([]);
+      setActiveMember(null);
       loadProjects(selectedWorkspace.id);
+      loadMembers(selectedWorkspace.id);
     }
-  }, [selectedWorkspace?.id]);
+  }, [selectedWorkspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createWorkspace = async () => {
     if (!newWorkspaceName.trim()) return;
     await api.post("/workspaces/", { name: newWorkspaceName });
-    setNewWorkspaceName(""); setShowCreateWorkspace(false); loadWorkspaces();
+    setNewWorkspaceName("");
+    setShowCreateWorkspace(false);
+    loadWorkspaces();
   };
 
   const createProject = async () => {
     if (!newProjectName.trim()) return;
     await api.post("/projects/", { name: newProjectName, workspace: selectedWorkspace.id });
-    setNewProjectName(""); setShowCreateProject(false);
+    setNewProjectName("");
+    setShowCreateProject(false);
     loadProjects(selectedWorkspace.id);
   };
 
-  // ✅ use per-workspace is_admin (not any workspace)
+  // Helper: get display name + email from member regardless of nesting shape
+  // Handles both { user: { username, email }, role } and flat { username, email, role }
+  const getMemberInfo = (m) => {
+    if (m.user) {
+      return {
+        name:  m.user.username  || m.user.first_name || "Unknown",
+        email: m.user.email     || "—",
+        role:  m.role           || "member",
+        id:    m.id,
+      };
+    }
+    return {
+      name:  m.username || m.name || "Unknown",
+      email: m.email    || "—",
+      role:  m.role     || "member",
+      id:    m.id,
+    };
+  };
+
+  const roleColor = (role) => {
+    if (!role) return "#6b7280";
+    const r = role.toLowerCase();
+    if (r === "admin"  || r === "owner")   return "#818cf8";
+    if (r === "editor" || r === "manager") return "#34d399";
+    return "#9ca3af";
+  };
+
   const isAdmin = selectedWorkspace?.is_admin;
   const wsColors = ["#4f8ef7","#7c5cfc","#10b981","#f59e0b","#ef4444","#ec4899"];
 
@@ -89,6 +141,17 @@ export default function WorkspaceSidebar({
           display: flex; align-items: center; justify-content: space-between;
         }
 
+        .section-label-left {
+          display: flex; align-items: center; gap: 6px; cursor: pointer;
+          user-select: none;
+        }
+        .section-chevron {
+          font-size: 9px; color: rgba(255,255,255,0.2);
+          transition: transform 0.2s;
+          display: inline-block;
+        }
+        .section-chevron.open { transform: rotate(90deg); }
+
         .section-add-btn {
           width: 18px; height: 18px; border-radius: 4px; border: none;
           background: none; cursor: pointer;
@@ -125,7 +188,6 @@ export default function WorkspaceSidebar({
           opacity: ${collapsed ? 0 : 1}; transition: opacity 0.15s;
         }
 
-        /* ── PROJECT ITEMS ── */
         .proj-item {
           display: flex; align-items: center; gap: 10px;
           padding: 8px 8px 8px 14px;
@@ -148,6 +210,67 @@ export default function WorkspaceSidebar({
           opacity: ${collapsed ? 0 : 1}; transition: opacity 0.15s;
         }
         .proj-item.active .proj-name { color: #818cf8; font-weight: 600; }
+
+        /* ── Members ── */
+        .member-item {
+          display: flex; align-items: center; gap: 9px;
+          padding: 6px 8px 6px 12px;
+          border-radius: 8px; cursor: pointer; transition: all 0.15s; min-width: 0;
+          position: relative;
+        }
+        .member-item:hover { background: rgba(255,255,255,0.04); }
+        .member-item.active-popover { background: rgba(99,102,241,0.1); }
+
+        .member-avatar {
+          width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 10px; font-weight: 700; color: #fff;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        }
+
+        .member-name {
+          font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,0.5);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          opacity: ${collapsed ? 0 : 1}; transition: opacity 0.15s;
+          flex: 1; min-width: 0;
+        }
+        .member-item:hover .member-name,
+        .member-item.active-popover .member-name { color: rgba(255,255,255,0.8); }
+
+        /* Popover */
+        .member-popover {
+          position: absolute; left: calc(100% + 8px); top: 0;
+          background: #1a1d27;
+          border: 1px solid rgba(255,255,255,0.09);
+          border-radius: 10px;
+          padding: 14px 16px;
+          min-width: 200px;
+          box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+          z-index: 300;
+          animation: popIn 0.15s ease;
+        }
+        @keyframes popIn {
+          from { opacity: 0; transform: translateX(-6px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .popover-name {
+          font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85);
+          margin-bottom: 4px;
+        }
+        .popover-email {
+          font-size: 11.5px; color: rgba(255,255,255,0.35);
+          margin-bottom: 10px; word-break: break-all;
+        }
+        .popover-role-badge {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 3px 10px; border-radius: 20px;
+          font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+          border: 1px solid; text-transform: capitalize;
+        }
+        .popover-dot {
+          width: 5px; height: 5px; border-radius: 50%;
+        }
 
         .create-input-row {
           display: flex; gap: 6px; margin-bottom: 6px; padding: 0 4px;
@@ -188,13 +311,16 @@ export default function WorkspaceSidebar({
 
         @media (max-width: 640px) {
           .sidebar { width: 56px !important; }
-          .ws-name, .proj-name, .sidebar-bottom-item span:last-child,
+          .ws-name, .proj-name, .member-name, .sidebar-bottom-item span:last-child,
           .sidebar-section-label, .create-input-row { opacity: 0 !important; }
           .collapse-btn { display: none; }
         }
       `}</style>
 
-      <div className="sidebar">
+      <div className="sidebar" onClick={(e) => {
+        // Close popover if clicking outside a member item
+        if (!e.target.closest(".member-item")) setActiveMember(null);
+      }}>
         <button className="collapse-btn" onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? "Expand" : "Collapse"}>
           {collapsed ? "›" : "‹"}
@@ -252,6 +378,15 @@ export default function WorkspaceSidebar({
               </div>
             )}
 
+            {projects.length === 0 && (
+              <div style={{
+                fontSize: 12, color: "rgba(255,255,255,0.2)",
+                padding: "6px 8px", fontFamily: "'Plus Jakarta Sans', sans-serif"
+              }}>
+                No projects yet
+              </div>
+            )}
+
             {projects.map(p => (
               <div key={p.id}
                 className={`proj-item ${selectedProject?.id === p.id ? "active" : ""}`}
@@ -260,6 +395,83 @@ export default function WorkspaceSidebar({
                 <span className="proj-name">{p.name}</span>
               </div>
             ))}
+          </>
+        )}
+
+        {/* ── MEMBERS (collapsible) ── */}
+        {selectedWorkspace && !collapsed && (
+          <>
+            <div className="sidebar-section-label">
+              <span
+                className="section-label-left"
+                onClick={() => setMembersExpanded(x => !x)}
+              >
+                <span className={`section-chevron ${membersExpanded ? "open" : ""}`}>▶</span>
+                Members
+                {members.length > 0 && (
+                  <span style={{
+                    fontSize: 9, background: "rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.3)", borderRadius: 10,
+                    padding: "1px 6px", fontWeight: 600,
+                  }}>{members.length}</span>
+                )}
+              </span>
+            </div>
+
+            {membersExpanded && (
+              <>
+                {members.length === 0 && (
+                  <div style={{
+                    fontSize: 12, color: "rgba(255,255,255,0.2)",
+                    padding: "6px 8px", fontFamily: "'Plus Jakarta Sans', sans-serif"
+                  }}>
+                    No members yet
+                  </div>
+                )}
+
+                {members.map((m) => {
+                  const info = getMemberInfo(m);
+                  const color = roleColor(info.role);
+                  const isOpen = activeMember?.id === info.id;
+
+                  return (
+                    <div
+                      key={info.id}
+                      className={`member-item ${isOpen ? "active-popover" : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMember(isOpen ? null : info);
+                      }}
+                      title={info.name}
+                    >
+                      <div className="member-avatar">
+                        {info.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="member-name">{info.name}</span>
+
+                      {/* Popover */}
+                      {isOpen && (
+                        <div className="member-popover" onClick={e => e.stopPropagation()}>
+                          <div className="popover-name">{info.name}</div>
+                          <div className="popover-email">{info.email}</div>
+                          <span
+                            className="popover-role-badge"
+                            style={{
+                              color,
+                              borderColor: color + "44",
+                              background: color + "18",
+                            }}
+                          >
+                            <span className="popover-dot" style={{ background: color }} />
+                            {info.role}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </>
         )}
 

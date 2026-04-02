@@ -10,10 +10,12 @@ import CreateTaskModal from "../components/CreateTaskModal";
 export default function Projects() {
   const [activeView,        setActiveView]        = useState("BOARD");
   const [selectedWorkspace, setSelectedWorkspace] = useState(null);
-  const [selectedProject,   setSelectedProject]   = useState(null);  // ✅ ADDED
+  const [selectedProject,   setSelectedProject]   = useState(null);
   const [showInvite,        setShowInvite]        = useState(false);
   const [showCreate,        setShowCreate]        = useState(false);
   const [reloadBoard,       setReloadBoard]       = useState(false);
+  // ✅ NEW: incrementing this tells the sidebar to re-fetch members
+  const [reloadMembers,     setReloadMembers]     = useState(0);
 
   return (
     <>
@@ -79,29 +81,33 @@ export default function Projects() {
       `}</style>
 
       <div className="app-shell">
-        <JiraTopBar onCreateClick={() => setShowCreate(true)} />
+
+        <JiraTopBar
+          onCreateClick={() => setShowCreate(true)}
+          onInviteClick={() => setShowInvite(true)}
+          selectedWorkspace={selectedWorkspace}
+        />
 
         <div className="app-body">
 
-          {/* ✅ ALL 4 PROPS — missing setSelectedProject was the crash */}
           <WorkspaceSidebar
             selectedWorkspace={selectedWorkspace}
             setSelectedWorkspace={setSelectedWorkspace}
             selectedProject={selectedProject}
             setSelectedProject={setSelectedProject}
+            reloadMembers={reloadMembers}  // ✅ NEW: sidebar watches this
           />
 
           <div className="app-main">
             {selectedWorkspace ? (
               <>
-                {/* Show selected project name in header, fallback to workspace */}
                 <ProjectHeader
                   name={selectedProject ? selectedProject.name : selectedWorkspace.name}
+                  onInviteClick={() => setShowInvite(true)}
                 />
                 <BoardTabs activeView={activeView} setActiveView={setActiveView} />
 
                 {activeView === "BOARD" && (
-                  // key includes selectedProject.id so board fully remounts on project switch
                   <KanbanBoard
                     key={`${selectedProject?.id}-${reloadBoard}`}
                     selectedProject={selectedProject}
@@ -133,8 +139,9 @@ export default function Projects() {
         {showInvite && selectedWorkspace && (
           <InvitePeopleModal
             workspaceId={selectedWorkspace.id}
+            workspaceName={selectedWorkspace.name}
             onClose={() => setShowInvite(false)}
-            onSuccess={() => {}}
+            onSuccess={() => setReloadMembers(n => n + 1)}  // ✅ FIXED: was () => {}
           />
         )}
 

@@ -1,4 +1,4 @@
-export default function ProjectHeader({ name }) {
+export default function ProjectHeader({ name, onInviteClick, isAdmin }) {
   return (
     <>
       <style>{`
@@ -81,6 +81,30 @@ export default function ProjectHeader({ name }) {
           color: #2d3452;
         }
 
+        /* ✅ Invite button — always visible when workspace is selected */
+        .invite-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 16px;
+          border-radius: 8px;
+          border: 1.5px solid rgba(99,102,241,0.35);
+          background: rgba(99,102,241,0.08);
+          color: #6366f1;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          cursor: pointer;
+          transition: all 0.15s;
+          white-space: nowrap;
+        }
+
+        .invite-btn:hover {
+          background: rgba(99,102,241,0.15);
+          border-color: #6366f1;
+          color: #4f46e5;
+        }
+
         .action-icon-btn {
           width: 34px; height: 34px;
           border-radius: 8px;
@@ -102,6 +126,7 @@ export default function ProjectHeader({ name }) {
         @media (max-width: 600px) {
           .project-badge { display: none; }
           .action-btn span { display: none; }
+          .invite-btn span:last-child { display: none; }
         }
       `}</style>
 
@@ -117,6 +142,13 @@ export default function ProjectHeader({ name }) {
         </div>
 
         <div className="project-actions">
+          {/* ✅ Invite button — shown whenever a workspace is active */}
+          {onInviteClick && (
+            <button className="invite-btn" onClick={onInviteClick}>
+              <span>👥</span> <span>Invite</span>
+            </button>
+          )}
+
           <button className="action-btn">
             <span>🔗</span> <span>Share</span>
           </button>
