@@ -147,10 +147,11 @@ export default function Projects() {
 
         {showCreate && selectedWorkspace && (
           <CreateTaskModal
-            workspaceId={selectedWorkspace.id}
-            onClose={() => setShowCreate(false)}
-            onCreated={() => setReloadBoard(r => !r)}
-          />
+  workspaceId={selectedWorkspace.id}
+  projectId={selectedProject?.id}
+  onClose={() => setShowCreate(false)}
+  onCreated={() => setReloadBoard(r => !r)}
+/>
         )}
       </div>
     </>

@@ -14,9 +14,21 @@ const PRIORITY_CONFIG = {
   HIGH:   { label: "High",   icon: "↑", color: "#ef4444", bg: "#fef2f2" },
 };
 
-export default function CreateTaskModal({ task, workspaceId, onClose, onCreated }) {
+export default function CreateTaskModal({
+  task,
+  workspaceId,
+  projectId,
+  onClose,
+  onCreated
+}){
+  
   const isEdit = Boolean(task);
   const modalRef = useRef(null);
+
+  const [boards, setBoards] = useState([]);
+const [selectedBoard, setSelectedBoard] = useState("");
+const [columns, setColumns] = useState([]);
+const [selectedColumn, setSelectedColumn] = useState("");
 
   const [error, setError]                     = useState("");
   const [teams, setTeams]                     = useState([]);
@@ -62,6 +74,27 @@ export default function CreateTaskModal({ task, workspaceId, onClose, onCreated 
     api.get(`/users/?workspace=${wsId}`).then(r => setUsers(r.data)).catch(() => {});
   }, [wsId]);
 
+
+  
+useEffect(() => {
+  if (!projectId) return;
+
+  api.get(`/boards/?project=${projectId}`)
+    .then(res => setBoards(res.data))
+    .catch(console.error);
+
+}, [projectId]);
+
+
+useEffect(() => {
+  if (!selectedBoard) return;
+
+  api.get(`/task-lists/?board=${selectedBoard}`)
+    .then(res => setColumns(res.data))
+    .catch(console.error);
+
+}, [selectedBoard]);
+
   /* close on backdrop */
   const handleBackdrop = e => { if (e.target === e.currentTarget) onClose(); };
 
@@ -94,31 +127,49 @@ export default function CreateTaskModal({ task, workspaceId, onClose, onCreated 
     setForm(p => ({ ...p, assignees: v ? [v] : [] }));
   };
 
-  const submit = async (publish = false) => {
-    setError("");
-    if (!form.title.trim()) { setError("Summary is required"); return; }
-    setSubmitting(true);
-    const payload = {
-      title: form.title,
-      description: form.description,
-      priority: form.priority,
-      assignees: form.assignees,
-      status: form.status,
-      team: form.team,
-      is_published: publish ? true : form.is_published,
-    };
-    try {
-      if (isEdit) await api.patch(`/tasks/${task.id}/`, payload);
-      else await api.post("/tasks/", payload);
-      onCreated();
-      onClose();
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+const submit = async (publish = false) => {
+  setError("");
+
+  if (!form.title.trim()) {
+    setError("Summary is required");
+    return;
+  }
+
+  if (!selectedColumn && !isEdit) {
+    setError("Please select a column");
+    return;
+  }
+
+  setSubmitting(true);
+
+  const payload = {
+    title: form.title,
+    description: form.description,
+    priority: form.priority,
+    assignees: form.assignees,
+    status: form.status,
+    team: form.team,
+    task_list_id: selectedColumn,
+    is_published: publish ? true : form.is_published,
   };
 
+  try {
+    if (isEdit) {
+      await api.patch(`/tasks/${task.id}/`, payload);
+    } else {
+      await api.post("/tasks/", payload);
+    }
+
+    onCreated();
+    onClose();
+
+  } catch (err) {
+    console.error(err);
+    setError("Something went wrong. Please try again.");
+  } finally {
+    setSubmitting(false);
+  }
+};
   const status   = STATUS_CONFIG[form.status]    || STATUS_CONFIG.TODO;
   const priority = PRIORITY_CONFIG[form.priority] || PRIORITY_CONFIG.MEDIUM;
 
@@ -585,7 +636,44 @@ export default function CreateTaskModal({ task, workspaceId, onClose, onCreated 
 
               {/* SIDEBAR */}
               <div className="ctm-sidebar">
+<div className="sb-field">
+  <div className="sb-label">Board</div>
 
+  <select
+    className="sb-select"
+    value={selectedBoard}
+    onChange={(e) => {
+      setSelectedBoard(e.target.value);
+      setSelectedColumn("");
+    }}
+  >
+    <option value="">Select Board</option>
+
+    {boards.map(board => (
+      <option key={board.id} value={board.id}>
+        {board.name}
+      </option>
+    ))}
+  </select>
+</div>
+
+<div className="sb-field">
+  <div className="sb-label">Column</div>
+
+  <select
+    className="sb-select"
+    value={selectedColumn}
+    onChange={(e) => setSelectedColumn(e.target.value)}
+  >
+    <option value="">Select Column</option>
+
+    {columns.map(col => (
+      <option key={col.id} value={col.id}>
+        {col.title}
+      </option>
+    ))}
+  </select>
+</div>
                 <div className="sb-field">
                   <div className="sb-label">Team</div>
                   <select className="sb-select" name="team" value={form.team || ""} onChange={handleChange}>

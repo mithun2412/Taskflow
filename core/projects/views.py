@@ -240,9 +240,16 @@ class BoardViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Board.objects.filter(
+        project_id = self.request.query_params.get("project")
+
+        qs = Board.objects.filter(
             project__workspace__workspacemember__user=self.request.user
-        ).distinct()
+        )
+
+        if project_id:
+            qs = qs.filter(project_id=project_id)
+
+        return qs.distinct()
 
     def perform_create(self, serializer):
         project_id = self.request.data.get("project")

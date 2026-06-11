@@ -302,7 +302,7 @@ export default function InvitePeopleModal({ workspaceId, workspaceName, onClose,
               <p className="im-sub">
                 Add members to <strong>{workspaceName || "this workspace"}</strong>.
                 They'll see all projects inside it.
-              </p>
+              </p>-
 
               {/* Search */}
               <div className="im-search-wrap">

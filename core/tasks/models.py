@@ -72,7 +72,7 @@ class Task(models.Model):
     ]
 
     id = models.AutoField(primary_key=True)
-
+    
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 

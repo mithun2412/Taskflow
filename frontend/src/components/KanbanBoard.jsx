@@ -52,6 +52,9 @@ function TaskDetailPanel({ task, workspaceId, onClose, onSaved }) {
   const [saving,     setSaving]     = useState(false);
   const [comments,   setComments]   = useState([]);
   const [newComment, setNewComment] = useState("");
+ 
+
+
 
   useEffect(() => {
     setForm({ ...task });
@@ -59,21 +62,33 @@ function TaskDetailPanel({ task, workspaceId, onClose, onSaved }) {
     api.get(`/comments/?task=${task.id}`).then(r => setComments(r.data)).catch(() => {});
   }, [task.id]);
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await api.patch(`/tasks/${task.id}/`, {
-        title: form.title, description: form.description,
-        priority: form.priority, work_type: form.work_type,
-        status: form.status, due_date: form.due_date || null,
-        story_points: form.story_points || null,
-      });
-      onSaved(res.data);
-      setEditing(false);
-    } catch {}
-    setSaving(false);
-  };
+  const handleAddTask = async (column) => {
+  console.log("ACTIVE BOARD =", activeBoard);
+  console.log("COLUMN =", column);
+  console.log("TASK LIST ID =", column.id);
 
+  if (!newTaskTitle.trim()) return;
+
+  try {
+    const res = await api.post("/tasks/", {
+      title: newTaskTitle,
+      status: STATUS_FROM_TITLE[column.title] || "TODO",
+      work_type: "TASK",
+      priority: "MEDIUM",
+      task_list_id: column.id,
+    });
+
+    console.log("CREATED TASK =", res.data);
+
+    await loadBoardData(activeBoard.id);
+
+  } catch (err) {
+    console.error(err);
+  }
+
+  setNewTaskTitle("");
+  setAddingCol(null);
+};
   const postComment = async () => {
     if (!newComment.trim()) return;
     await api.post("/comments/", { task: task.id, message: newComment });
@@ -232,6 +247,32 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
   const [selectedTask,   setSelectedTask]   = useState(null);
   const [addingCol,      setAddingCol]      = useState(null);
   const [newTaskTitle,   setNewTaskTitle]   = useState("");
+  const [showCreateBoard, setShowCreateBoard] = useState(false);
+    const [boardName, setBoardName] = useState("");
+
+
+
+    const createBoard = async () => {
+        if (!boardName.trim()) return;
+
+        try {
+            const res = await api.post("/boards/", {
+                name: boardName,
+                project: selectedProject.id,
+            });
+
+            setBoards(prev => [...prev, res.data]);
+            setActiveBoard(res.data);
+
+            setBoardName("");
+            setShowCreateBoard(false);
+
+        } catch (err) {
+            console.error(err);
+            alert("Failed to create board");
+        }
+    };
+
 
   // ── fetch boards when project changes ────────────────────────────
   useEffect(() => {
@@ -272,9 +313,9 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
     setLoadingBoard(true);
     try {
       const [colsRes, tasksRes] = await Promise.all([
-        api.get(`/task-lists/?board=${boardId}`),
-        api.get(`/tasks/?board=${boardId}`),
-      ]);
+      api.get(`/task-lists/?board=${boardId}`),
+      api.get(`/tasks/?board=${boardId}`),
+    ]);
       const cols  = colsRes.data.sort((a, b) => a.position - b.position);
       const tasks = tasksRes.data;
       const grouped = {};
@@ -287,25 +328,7 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
     setLoadingBoard(false);
   };
 
-  const handleAddTask = async (column) => {
-    if (!newTaskTitle.trim()) return;
-    try {
-      const res = await api.post("/tasks/", {
-        title:        newTaskTitle,
-        status:       STATUS_FROM_TITLE[column.title] || "TODO",
-        work_type:    "TASK",
-        priority:     "MEDIUM",
-        task_list_id: column.id,   // ✅ tells backend exactly which board/project
-      });
-      setTasksByCol(prev => ({
-        ...prev,
-        [column.id]: [...(prev[column.id] || []), res.data],
-      }));
-    } catch (err) {
-      console.error("Failed to create task:", err);
-    }
-    setNewTaskTitle(""); setAddingCol(null);
-  };
+  
 
   const handleTaskSaved = (updated) => {
     setTasksByCol(prev => {
@@ -340,15 +363,68 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
 
   // Boards loaded but none exist for this project
   if (!loadingBoards && boards.length === 0) return (
-    <div style={emptyWrap}>
-      <div style={{ fontSize:40, marginBottom:12 }}>🗂</div>
-      <h3 style={emptyH}>No boards yet</h3>
-      <p style={emptyP}>
-        Ask a workspace admin to create a board for{" "}
-        <strong style={{ color:"rgba(255,255,255,0.6)" }}>{selectedProject.name}</strong>
-      </p>
-    </div>
-  );
+  <div style={emptyWrap}>
+    <div style={{ fontSize: 40, marginBottom: 12 }}>🗂</div>
+
+    <h3 style={emptyH}>No boards yet</h3>
+
+    <p style={emptyP}>
+      Create your first board for
+      <br />
+      <strong>{selectedProject.name}</strong>
+    </p>
+
+    <button
+      style={{
+        marginTop: 20,
+        padding: "10px 18px",
+        borderRadius: 8,
+        border: "none",
+        background: "#6366f1",
+        color: "#fff",
+        cursor: "pointer",
+      }}
+      onClick={() => setShowCreateBoard(true)}
+    >
+      + Create Board
+    </button>
+
+    {showCreateBoard && (
+      <div style={{
+        marginTop: 20,
+        display: "flex",
+        gap: 10,
+      }}>
+        <input
+          value={boardName}
+          onChange={(e) => setBoardName(e.target.value)}
+          placeholder="Board name"
+          style={{
+            padding: 10,
+            borderRadius: 8,
+            border: "1px solid #333",
+            background: "#1a1d27",
+            color: "#fff",
+          }}
+        />
+
+        <button
+          onClick={createBoard}
+          style={{
+            padding: "10px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: "#10b981",
+            color: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          Create
+        </button>
+      </div>
+    )}
+  </div>
+);
 
   return (
     <>
@@ -644,10 +720,27 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
               </span>
             </>
           )}
-          <button className="kb-refresh"
-            onClick={() => activeBoard && loadBoardData(activeBoard.id)}>
-            ↺ Refresh
-          </button>
+          <button
+  style={{
+    padding: "6px 12px",
+    borderRadius: 7,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "#6366f1",
+    color: "#fff",
+    cursor: "pointer",
+    marginLeft: "auto",
+  }}
+  onClick={() => setShowCreateBoard(true)}
+>
+  + New Board
+</button>
+
+<button
+  className="kb-refresh"
+  onClick={() => activeBoard && loadBoardData(activeBoard.id)}
+>
+  ↺ Refresh
+</button>
         </div>
 
         {/* Board content */}
@@ -760,6 +853,74 @@ export default function KanbanBoard({ selectedProject, selectedWorkspace }) {
           </div>
         )}
       </div>
+      {showCreateBoard && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.6)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+    }}
+  >
+    <div
+      style={{
+        background: "#1a1d27",
+        padding: 24,
+        borderRadius: 12,
+        width: 350,
+      }}
+    >
+      <h3 style={{ color: "#fff", marginBottom: 15 }}>
+        Create Board
+      </h3>
+
+      <input
+        value={boardName}
+        onChange={(e) => setBoardName(e.target.value)}
+        placeholder="Board Name"
+        style={{
+          width: "100%",
+          padding: 10,
+          borderRadius: 8,
+          border: "1px solid #333",
+          background: "#111",
+          color: "#fff",
+        }}
+      />
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          gap: 10,
+          marginTop: 15,
+        }}
+      >
+        <button
+          onClick={() => setShowCreateBoard(false)}
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={createBoard}
+          style={{
+            background: "#10b981",
+            color: "#fff",
+            border: "none",
+            padding: "8px 14px",
+            borderRadius: 8,
+          }}
+        >
+          Create
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {selectedTask && (
         <TaskDetailPanel

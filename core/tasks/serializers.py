@@ -103,6 +103,7 @@ class TaskSerializer(serializers.ModelSerializer):
 # Task (CREATE / UPDATE)
 # ---------------------------
 class TaskCreateSerializer(serializers.ModelSerializer):
+    task_list_id = serializers.IntegerField(write_only=True)
     assignees = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
@@ -123,9 +124,12 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             "due_date",
             "story_points",
             "assignees",
+            "task_list_id",
         ]
 
     def create(self, validated_data):
+        validated_data.pop("task_list_id", None)
+
         assignees = validated_data.pop("assignees", [])
 
         task = Task.objects.create(**validated_data)
@@ -139,14 +143,18 @@ class TaskCreateSerializer(serializers.ModelSerializer):
         return task
 
     def update(self, instance, validated_data):
+        validated_data.pop("task_list_id", None)
+
         assignees = validated_data.pop("assignees", None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+
         instance.save()
 
         if assignees is not None:
             instance.task_assignees.all().delete()
+
             for user_id in assignees:
                 TaskAssignee.objects.create(
                     task=instance,
