@@ -1,0 +1,18 @@
+[33m9f9b038[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m updates
+[33m1ee5f68[m add SMTP
+[33mbdc1763[m added SMTP mail
+[33ma9588e7[m upated
+[33mf489951[m fix case sensitivity
+[33m3049033[m temp rename
+[33mefcc666[m Fix component case sensitivity
+[33md72f3a0[m Updated
+[33mb613ffd[m updated req
+[33m28f262d[m Updated
+[33mc1385a8[m Fix CI path for Django structure
+[33m023598b[m updated
+[33me0de991[m Add CI pipeline for backend and frontend
+[33mc7fa390[m Updated Taskflow
+[33md4ed1c8[m add requirements.txt
+[33m0a21cf1[m Updated code
+[33m53a9987[m made some changes
+[33m0d1b71a[m Initial commit

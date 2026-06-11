@@ -658,7 +658,7 @@ const submit = async (publish = false) => {
 </div>
 
 <div className="sb-field">
-  <div className="sb-label">Column</div>
+  <div className="sb-label">Status</div>
 
   <select
     className="sb-select"
@@ -702,18 +702,7 @@ const submit = async (publish = false) => {
                   </div>
                 </div>
 
-                <div className="sb-field">
-                  <div className="sb-label">Status</div>
-                  <select
-                    className="sb-select"
-                    value={form.status}
-                    onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
-                  >
-                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                      <option key={key} value={key}>{cfg.label}</option>
-                    ))}
-                  </select>
-                </div>
+                
 
                 <div className="sb-divider" />
 
